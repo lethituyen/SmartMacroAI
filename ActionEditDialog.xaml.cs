@@ -133,9 +133,10 @@ public partial class ActionEditDialog : Window
                 });
                 break;
             case IfImageAction img:
-                AddField("ImagePath", img.ImagePath, browse: true, displayCaption: Localization.LanguageManager.GetString("ui_ActionEdit_TemplatePath"));
+                // Multi-image list UI
+                AddMultiImageListPanel(img);
 
-                // Quick capture button — snip screen region and use as template immediately
+                // Quick capture button
                 var btnSnipTemplate = new Button
                 {
                     Content = "📷 " + Localization.LanguageManager.GetString("ui_ActionEdit_SnipCapture"),
@@ -155,8 +156,7 @@ public partial class ActionEditDialog : Window
                     var snip = new SnippingToolWindow();
                     if (snip.ShowDialog() == true && !string.IsNullOrEmpty(snip.CapturedFilePath))
                     {
-                        if (_fields.TryGetValue("ImagePath", out var tb))
-                            tb.Text = snip.CapturedFilePath;
+                        _imageListBox?.Items.Add(snip.CapturedFilePath);
                     }
                     Show();
                 };
@@ -531,6 +531,7 @@ public partial class ActionEditDialog : Window
 
     private TextBox? _coordXBox;
     private TextBox? _coordYBox;
+    private ListBox? _imageListBox;
 
     private void AddFieldWithPickerButton(string fieldKey, string value, string displayCaption)
     {
@@ -576,6 +577,143 @@ public partial class ActionEditDialog : Window
         panel.Children.Add(btnPick);
         panel.Children.Add(textBox);
         FieldsPanel.Children.Add(panel);
+    }
+
+    private void AddMultiImageListPanel(IfImageAction img)
+    {
+        FieldsPanel.Children.Add(new TextBlock
+        {
+            Text = Localization.LanguageManager.GetString("ui_ActionEdit_TemplatePath") + " (multi-image, max 20)",
+            FontSize = 11,
+            FontWeight = FontWeights.SemiBold,
+            Foreground = LabelBrush,
+            Margin = new Thickness(0, 8, 0, 4),
+        });
+
+        _imageListBox = new ListBox
+        {
+            Background = InputBg,
+            Foreground = InputFg,
+            BorderBrush = InputBorder,
+            BorderThickness = new Thickness(1),
+            MaxHeight = 140,
+            MinHeight = 60,
+            Margin = new Thickness(0, 0, 0, 4),
+        };
+
+        // Populate from existing paths
+        foreach (string path in img.EffectiveImagePaths)
+            _imageListBox.Items.Add(path);
+
+        FieldsPanel.Children.Add(_imageListBox);
+
+        // Buttons row: Add (+), Remove (-), Move Up/Down
+        var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 4) };
+
+        var btnAdd = new Button
+        {
+            Content = "+ " + Localization.LanguageManager.GetString("ui_ActionEdit_Browse"),
+            Padding = new Thickness(10, 6, 10, 6),
+            Background = AccentBrush,
+            Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#11111B")),
+            BorderThickness = new Thickness(0),
+            Cursor = System.Windows.Input.Cursors.Hand,
+            FontWeight = FontWeights.SemiBold,
+            Margin = new Thickness(0, 0, 4, 0),
+        };
+        btnAdd.Click += (_, _) =>
+        {
+            if (_imageListBox.Items.Count >= 20) return;
+            var dlg = new Microsoft.Win32.OpenFileDialog
+            {
+                Filter = Localization.LanguageManager.GetString("ui_ActionEdit_ImageFilter") + "|*.png;*.jpg;*.jpeg;*.bmp|" + Localization.LanguageManager.GetString("ui_ActionEdit_AllFilter") + "|*.*",
+                Multiselect = true
+            };
+            if (dlg.ShowDialog() == true)
+            {
+                foreach (string f in dlg.FileNames)
+                {
+                    if (_imageListBox.Items.Count >= 20) break;
+                    _imageListBox.Items.Add(f);
+                }
+            }
+        };
+
+        var btnRemove = new Button
+        {
+            Content = "−",
+            Padding = new Thickness(10, 6, 10, 6),
+            Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#45475A")),
+            Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F38BA8")),
+            BorderThickness = new Thickness(0),
+            Cursor = System.Windows.Input.Cursors.Hand,
+            Margin = new Thickness(0, 0, 4, 0),
+        };
+        btnRemove.Click += (_, _) =>
+        {
+            if (_imageListBox.SelectedIndex >= 0)
+                _imageListBox.Items.RemoveAt(_imageListBox.SelectedIndex);
+        };
+
+        var btnUp = new Button
+        {
+            Content = "▲",
+            Padding = new Thickness(8, 6, 8, 6),
+            Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#45475A")),
+            Foreground = InputFg,
+            BorderThickness = new Thickness(0),
+            Cursor = System.Windows.Input.Cursors.Hand,
+            Margin = new Thickness(0, 0, 4, 0),
+        };
+        btnUp.Click += (_, _) =>
+        {
+            int idx = _imageListBox.SelectedIndex;
+            if (idx > 0)
+            {
+                var item = _imageListBox.Items[idx];
+                _imageListBox.Items.RemoveAt(idx);
+                _imageListBox.Items.Insert(idx - 1, item!);
+                _imageListBox.SelectedIndex = idx - 1;
+            }
+        };
+
+        var btnDown = new Button
+        {
+            Content = "▼",
+            Padding = new Thickness(8, 6, 8, 6),
+            Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#45475A")),
+            Foreground = InputFg,
+            BorderThickness = new Thickness(0),
+            Cursor = System.Windows.Input.Cursors.Hand,
+            Margin = new Thickness(0, 0, 4, 0),
+        };
+        btnDown.Click += (_, _) =>
+        {
+            int idx = _imageListBox.SelectedIndex;
+            if (idx >= 0 && idx < _imageListBox.Items.Count - 1)
+            {
+                var item = _imageListBox.Items[idx];
+                _imageListBox.Items.RemoveAt(idx);
+                _imageListBox.Items.Insert(idx + 1, item!);
+                _imageListBox.SelectedIndex = idx + 1;
+            }
+        };
+
+        btnPanel.Children.Add(btnAdd);
+        btnPanel.Children.Add(btnRemove);
+        btnPanel.Children.Add(btnUp);
+        btnPanel.Children.Add(btnDown);
+        FieldsPanel.Children.Add(btnPanel);
+
+        // Help text
+        FieldsPanel.Children.Add(new TextBlock
+        {
+            Text = "Dùng để nhận diện nhiều loại icon/button khác nhau.\nVí dụ: 10 Option icons trong PoE Ultimatum - tìm thấy icon nào thì click vào đó.",
+            Foreground = LabelBrush,
+            FontSize = 10,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 0, 0, 4),
+        });
     }
 
     private async void BtnPickCoord_Click(object sender, RoutedEventArgs e)
@@ -1459,7 +1597,9 @@ public partial class ActionEditDialog : Window
                         rep.BreakThreshold = breakSl.Value;
                     break;
                 case IfImageAction img:
-                    img.ImagePath = GetFieldValue("ImagePath");
+                    // Save multi-image list
+                    img.ImagePaths = _imageListBox?.Items.Cast<string>().ToList() ?? [];
+                    img.ImagePath = img.ImagePaths.Count > 0 ? img.ImagePaths[0] : "";
                     img.Threshold = double.Parse(GetFieldValue("Threshold"));
                     img.ClickOnFound = GetCheckValue("ClickOnFound");
                     img.ClickMode = GetClickModeValue("IfImageClickMode");

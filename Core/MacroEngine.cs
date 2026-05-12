@@ -1493,6 +1493,21 @@ public sealed class MacroEngine
                 var pt = new POINT { X = click.X, Y = click.Y };
                 ClientToScreen(hwnd, ref pt);
 
+                // Ensure game window is in foreground — Interception sends to active window
+                IntPtr currentFg = GetForegroundWindow();
+                if (currentFg != hwnd)
+                {
+                    SetForegroundWindow(hwnd);
+                    BringWindowToTop(hwnd);
+                    await Task.Delay(30, token);
+                }
+
+                if (!InterceptionService.Instance.IsInitialized)
+                {
+                    // Try to initialize one more time before falling back
+                    InterceptionService.Instance.Initialize();
+                }
+
                 if (!InterceptionService.Instance.IsInitialized)
                 {
                     OnLog(string.Format(LanguageManager.GetString("ui_Engine_InterceptionNotInstalled"), "Raw mode"));
@@ -2316,6 +2331,10 @@ public sealed class MacroEngine
         }
         try
         {
+            // Try to initialize if not ready
+            if (!InterceptionService.Instance.IsInitialized)
+                InterceptionService.Instance.Initialize();
+
             if (!InterceptionService.Instance.IsInitialized)
             {
                 OnLog(string.Format(LanguageManager.GetString("ui_Engine_InterceptionNotInstalled"), "RawInput"));
@@ -2359,6 +2378,14 @@ public sealed class MacroEngine
             }
 
             // ── Driver level path ──
+            // Ensure game window is in foreground for key input
+            IntPtr currentFg = GetForegroundWindow();
+            if (currentFg != hwnd)
+            {
+                SetForegroundWindow(hwnd);
+                await Task.Delay(20, token);
+            }
+
             uint scanCode = MapVirtualKey((uint)kpa.VirtualKeyCode, 0);
             bool isExtended = kpa.VirtualKeyCode is 0x21 or 0x22 or 0x23 or 0x24 or
                                           0x25 or 0x26 or 0x27 or 0x28 or
@@ -2726,35 +2753,64 @@ public sealed class MacroEngine
         // FIX 5: HWND liveness check
         if (!IsTargetValid()) return;
 
-        string imagePath = ExpandRuntime(ifImage.ImagePath);
+        // Multi-image support: get effective list of images to search
+        var imagePaths = ifImage.EffectiveImagePaths
+            .Select(p => ExpandRuntime(p))
+            .Where(p => !string.IsNullOrWhiteSpace(p))
+            .ToList();
+
+        if (imagePaths.Count == 0)
+        {
+            OnLog("  ⚠ IfImageFound: no image paths configured");
+            if (ifImage.ElseActions.Count > 0)
+                await ExecuteActionsAsync(ifImage.ElseActions, token);
+            return;
+        }
+
         int maxWait = Math.Max(0, ifImage.TimeoutMs);
         int elapsed = 0;
         int retryCount = 0;
         Point? match = null;
+        string matchedImagePath = "";
+        int matchedIndex = -1;
 
         bool retryUntilFound = ifImage.RetryUntilFound;
         int retryInterval = Math.Max(50, ifImage.RetryIntervalMs);
         int maxRetries = ifImage.MaxRetryCount; // 0 = unlimited
 
-        OnLog($"  IfImageFound \"{Path.GetFileName(imagePath)}\" " +
+        string imageNames = string.Join(", ", imagePaths.Select(Path.GetFileName));
+        OnLog($"  IfImageFound [{imagePaths.Count} image(s): {Truncate(imageNames, 80)}] " +
               $"(threshold={ifImage.Threshold:P0}, timeout={maxWait}ms, retryUntilFound={retryUntilFound})");
 
-        // ── RetryUntilFound mode: loop indefinitely until found or MaxRetries hit ────────
+        // Helper: search all images in order, return first match
+        Point? SearchAllImages()
+        {
+            for (int i = 0; i < imagePaths.Count; i++)
+            {
+                string path = imagePaths[i];
+                if (!File.Exists(path)) continue;
+
+                var result = VisionEngine.FindImageOnWindowMultiScale(
+                    hwnd, path, ifImage.Threshold, scales: null, searchRegion: ifImage.SearchRegion);
+
+                if (result.HasValue)
+                {
+                    matchedImagePath = path;
+                    matchedIndex = i;
+                    return result;
+                }
+            }
+            return null;
+        }
+
+        // ── RetryUntilFound mode ────────
         if (retryUntilFound)
         {
             do
             {
                 token.ThrowIfCancellationRequested();
 
-                try
-                {
-                    match = VisionEngine.FindImageOnWindowMultiScale(
-                        hwnd,
-                        imagePath,
-                        ifImage.Threshold,
-                        scales: null,
-                        searchRegion: ifImage.SearchRegion);
-                }
+                try { match = SearchAllImages(); }
                 catch (Exception ex)
                 {
                     OnLog($"    ⚠ Vision error: {ex.Message}");
@@ -2763,15 +2819,13 @@ public sealed class MacroEngine
 
                 if (match.HasValue)
                 {
-                    OnLog($"    → FOUND at ({match.Value.X}, {match.Value.Y}) after {retryCount} retry(ies)");
+                    OnLog($"    → FOUND \"{Path.GetFileName(matchedImagePath)}\" [#{matchedIndex + 1}] at ({match.Value.X}, {match.Value.Y}) after {retryCount} retry(ies)");
                     break;
                 }
 
-                // Check retry limit before waiting
                 if (maxRetries > 0 && retryCount >= maxRetries)
                 {
                     OnLog($"    → Max retry count ({maxRetries}) reached → running ElseActions");
-                    match = null;
                     break;
                 }
 
@@ -2781,7 +2835,7 @@ public sealed class MacroEngine
             }
             while (true);
         }
-        // ── Standard timeout-based mode ──────────────────────────────────────────────────
+        // ── Standard timeout-based mode ──
         else
         {
             const int PollMs = 500;
@@ -2790,51 +2844,43 @@ public sealed class MacroEngine
             {
                 token.ThrowIfCancellationRequested();
 
-                try
-                {
-                    match = VisionEngine.FindImageOnWindowMultiScale(
-                        hwnd,
-                        imagePath,
-                        ifImage.Threshold,
-                        scales: null,
-                        searchRegion: ifImage.SearchRegion);
-                }
+                try { match = SearchAllImages(); }
                 catch (Exception ex)
                 {
                     OnLog($"    ⚠ Vision error: {ex.Message}");
                     break;
                 }
 
-                if (match.HasValue)
-                    break;
-
-                if (elapsed >= maxWait)
-                    break;
+                if (match.HasValue) break;
+                if (elapsed >= maxWait) break;
 
                 int wait = Math.Min(PollMs, maxWait - elapsed);
-                if (wait <= 0)
-                    break;
+                if (wait <= 0) break;
 
                 await _macroRunner.Timing.WaitAsync(wait, Math.Max(10, wait / 4), token).ConfigureAwait(false);
                 elapsed += wait;
             } while (elapsed < maxWait);
 
             if (match.HasValue)
-                OnLog($"    → FOUND at ({match.Value.X}, {match.Value.Y}) after {elapsed}ms");
+                OnLog($"    → FOUND \"{Path.GetFileName(matchedImagePath)}\" [#{matchedIndex + 1}] at ({match.Value.X}, {match.Value.Y}) after {elapsed}ms");
         }
 
         // ── Image found → save coordinates to variables + click (if enabled) + ThenActions ─
         if (match.HasValue)
         {
-            // Save found coordinates to runtime variables for use in subsequent actions
+            // Save found coordinates and matched image info to runtime variables
             _variableStore.Set("image_x", match.Value.X.ToString());
             _variableStore.Set("image_y", match.Value.Y.ToString());
+            _variableStore.Set("foundImageName", Path.GetFileNameWithoutExtension(matchedImagePath));
+            _variableStore.Set("foundImageIndex", (matchedIndex + 1).ToString());
             _vars.Set("image_x", match.Value.X);
             _vars.Set("image_y", match.Value.Y);
+            _vars.Set("foundImageName", Path.GetFileNameWithoutExtension(matchedImagePath));
+            _vars.Set("foundImageIndex", matchedIndex + 1);
 
             try
             {
-                var det = VisionEngine.FindImageOnWindowDetailed(hwnd, imagePath, ifImage.SearchRegion);
+                var det = VisionEngine.FindImageOnWindowDetailed(hwnd, matchedImagePath, ifImage.SearchRegion);
                 if (det.HasValue)
                     _lastImageMatchConfidence = det.Value.Confidence;
             }
@@ -2882,6 +2928,40 @@ public sealed class MacroEngine
                                 };
                                 SendInput(3, inputs, Marshal.SizeOf<INPUT>());
                                 OnLog($"    → Raw click at ({cx},{cy})");
+                            }
+                            finally { _osResourceLock.Release(); }
+                            break;
+                        }
+                    case ClickMode.DriverLevel:
+                        {
+                            // Interception kernel driver — bypasses anti-cheat (Cabal, MapleStory, etc.)
+                            if (!await _osResourceLock.WaitAsync(TimeSpan.FromSeconds(5), token)) return;
+                            try
+                            {
+                                var pt = new POINT { X = cx, Y = cy };
+                                ClientToScreen(hwnd, ref pt);
+
+                                if (InterceptionService.Instance.IsInitialized)
+                                {
+                                    InterceptionService.Instance.SendMouseClick(pt.X, pt.Y, 50, MouseButton.Left);
+                                    OnLog($"    → Driver click at ({cx},{cy}) screen ({pt.X},{pt.Y})");
+                                }
+                                else
+                                {
+                                    // Fallback to SendInput if driver not available
+                                    int screenW = GetSystemMetrics(0);
+                                    int screenH = GetSystemMetrics(1);
+                                    int absX = (int)((pt.X + 0.5) * 65536.0 / screenW);
+                                    int absY = (int)((pt.Y + 0.5) * 65536.0 / screenH);
+                                    var inputs = new[]
+                                    {
+                                        new INPUT { type = INPUT_MOUSE, u = new INPUTUNION { mi = new MOUSEINPUT { dx = absX, dy = absY, dwFlags = MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESKTOP } } },
+                                        new INPUT { type = INPUT_MOUSE, u = new INPUTUNION { mi = new MOUSEINPUT { dwFlags = MOUSEEVENTF_LEFTDOWN } } },
+                                        new INPUT { type = INPUT_MOUSE, u = new INPUTUNION { mi = new MOUSEINPUT { dwFlags = MOUSEEVENTF_LEFTUP } } }
+                                    };
+                                    SendInput(3, inputs, Marshal.SizeOf<INPUT>());
+                                    OnLog($"    → Driver→Raw fallback click at ({cx},{cy})");
+                                }
                             }
                             finally { _osResourceLock.Release(); }
                             break;

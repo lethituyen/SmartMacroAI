@@ -264,10 +264,33 @@ public class TypeAction : MacroAction
 /// Conditional: captures the target window in the background (PrintWindow),
 /// runs OpenCV template matching, and executes <see cref="ThenActions"/> only if
 /// the template image is found above <see cref="Threshold"/>.
+/// Supports multiple images — scans each in order, first match wins.
 /// </summary>
 public class IfImageAction : MacroAction
 {
+    /// <summary>Single image path (legacy, backward-compat). Synced with <see cref="ImagePaths"/>.</summary>
     public string ImagePath { get; set; } = string.Empty;
+
+    /// <summary>
+    /// List of image paths to search (in priority order). First match wins.
+    /// When empty, falls back to <see cref="ImagePath"/> for backward compatibility.
+    /// Max 20 images.
+    /// </summary>
+    public List<string> ImagePaths { get; set; } = [];
+
+    /// <summary>
+    /// Returns the effective list of images to search (handles legacy single-image case).
+    /// </summary>
+    [JsonIgnore]
+    public List<string> EffectiveImagePaths
+    {
+        get
+        {
+            if (ImagePaths.Count > 0) return ImagePaths;
+            if (!string.IsNullOrWhiteSpace(ImagePath)) return [ImagePath];
+            return [];
+        }
+    }
 
     /// <summary>
     /// Match confidence threshold (0.0 – 1.0). Default 0.8 = 80 %.
