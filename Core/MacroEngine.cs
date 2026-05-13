@@ -1560,22 +1560,34 @@ public sealed class MacroEngine
         }
 
         // For Android emulators (LDPlayer, Nox, BlueStacks): send to render child window
+        // Fix: convert parent coordinates to child render window coordinates (offset by toolbar)
         IntPtr clickHwnd = hwnd;
+        int emuX = click.X, emuY = click.Y;
         if (IsEmulatorWindow(hwnd))
         {
             IntPtr renderChild = FindEmulatorRenderChild(hwnd);
             if (renderChild != IntPtr.Zero)
             {
                 clickHwnd = renderChild;
-                Log?.Invoke($"[Click/Stealth→Emulator] target=0x{renderChild:X} ({click.X},{click.Y})");
+                var pO = new POINT { X = 0, Y = 0 };
+                var cO = new POINT { X = 0, Y = 0 };
+                ClientToScreen(hwnd, ref pO);
+                ClientToScreen(renderChild, ref cO);
+                emuX = click.X - (cO.X - pO.X);
+                emuY = click.Y - (cO.Y - pO.Y);
+                if (Win32Api.GetClientRect(renderChild, out Win32Api.RECT cr))
+                {
+                    emuX = Math.Clamp(emuX, 0, cr.Right - 1);
+                    emuY = Math.Clamp(emuY, 0, cr.Bottom - 1);
+                }
+                Log?.Invoke($"[Click/Stealth→Emulator] 0x{renderChild:X} ({emuX},{emuY}) [from ({click.X},{click.Y})]");
             }
         }
 
-        // DirectX fix: send WM_ACTIVATE to ensure the window processes input messages
         Win32Api.PostMessage(clickHwnd, Win32Api.WM_ACTIVATE, (IntPtr)Win32Api.WA_ACTIVE, IntPtr.Zero);
         await Task.Delay(10, token);
 
-        IntPtr lParam = Win32Api.MakeLParam(click.X, click.Y);
+        IntPtr lParam = Win32Api.MakeLParam(emuX, emuY);
         Win32Api.PostMessage(clickHwnd, Win32Api.WM_MOUSEMOVE, IntPtr.Zero, lParam);
         await Task.Delay(5, token);
 
