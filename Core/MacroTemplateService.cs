@@ -240,87 +240,66 @@ public static class MacroTemplateService
         new MacroTemplate
         {
             Name = "⚔️ Path of Exile — Ultimatum Auto",
-            Description = "Auto farm PoE: Vision AI tìm icon Ultimatum, auto flask, skill rotation. Dùng Raw/Hardware mode (game cần foreground cho Vision).",
+            Description = "Auto farm PoE Ultimatum: tìm icon → click → chờ Accept Trial → click. Dùng Raw/Hardware mode (game cần foreground cho Vision).",
             Category = "Game",
             TargetWindowTitle = "Path of Exile",
             Actions = new List<MacroAction>
             {
-                // Variables init
-                new SetVariableAction { DisplayName = "⚙️ Init flask_timer", VarName = "flask_timer", Value = "0", Operation = "Set" },
-
                 new RepeatAction
                 {
                     DisplayName = "🔄 Main Loop (infinite)",
                     RepeatCount = 0,
-                    IntervalMs = 300,
+                    IntervalMs = 800,
                     LoopActions = new List<MacroAction>
                     {
-                        // ═══ FLASK MANAGEMENT ═══
-                        // Increment flask timer
-                        new SetVariableAction { DisplayName = "flask_timer++", VarName = "flask_timer", Value = "1", Operation = "Increment" },
-
-                        // Every 15 loops (~5s) → press all flasks
-                        new IfVariableAction
-                        {
-                            DisplayName = "🧪 IF flask_timer >= 15 → Use Flasks",
-                            VarName = "flask_timer",
-                            CompareOp = ">=",
-                            Value = "15",
-                            ThenActions = new List<MacroAction>
-                            {
-                                new KeyPressAction { DisplayName = "Flask 1", KeyName = "D1", VirtualKeyCode = 0x31, HoldDurationMs = 30, InputMode = KeyInputMode.RawInput },
-                                new WaitAction { DisplayName = "delay", DelayMin = 50, DelayMax = 80 },
-                                new KeyPressAction { DisplayName = "Flask 2", KeyName = "D2", VirtualKeyCode = 0x32, HoldDurationMs = 30, InputMode = KeyInputMode.RawInput },
-                                new WaitAction { DisplayName = "delay", DelayMin = 50, DelayMax = 80 },
-                                new KeyPressAction { DisplayName = "Flask 3", KeyName = "D3", VirtualKeyCode = 0x33, HoldDurationMs = 30, InputMode = KeyInputMode.RawInput },
-                                new WaitAction { DisplayName = "delay", DelayMin = 50, DelayMax = 80 },
-                                new KeyPressAction { DisplayName = "Flask 4", KeyName = "D4", VirtualKeyCode = 0x34, HoldDurationMs = 30, InputMode = KeyInputMode.RawInput },
-                                new WaitAction { DisplayName = "delay", DelayMin = 50, DelayMax = 80 },
-                                new KeyPressAction { DisplayName = "Flask 5", KeyName = "D5", VirtualKeyCode = 0x35, HoldDurationMs = 30, InputMode = KeyInputMode.RawInput },
-                                new WaitAction { DisplayName = "delay", DelayMin = 30, DelayMax = 60 },
-                                new SetVariableAction { DisplayName = "Reset flask_timer", VarName = "flask_timer", Value = "0", Operation = "Set" },
-                            },
-                            ElseActions = new List<MacroAction>()
-                        },
-
-                        // ═══ ULTIMATUM ICON DETECTION ═══
-                        // Multi-image search: add your Ultimatum option icons here
+                        // ═══ STEP 1: Tìm 1 trong 8 icon Ultimatum ═══
                         new IfImageAction
                         {
-                            DisplayName = "👁️ Scan Ultimatum Icons",
+                            DisplayName = "👁️ Step 1: Tìm Icon Ultimatum (1-8)",
                             ImagePath = "",
-                            ImagePaths = new List<string>(), // User adds their icon screenshots here
+                            ImagePaths = new List<string>(), // User adds 8 icon screenshots
                             Threshold = 0.70,
-                            TimeoutMs = 1000,
+                            TimeoutMs = 2000,
                             RetryUntilFound = false,
                             ClickOnFound = true,
                             ClickMode = ClickMode.Raw,
-                            RandomOffset = 5,
+                            RandomOffset = 3,
                             ThenActions = new List<MacroAction>
                             {
-                                new LogAction { DisplayName = "📝 Log found", Message = "Found Ultimatum icon: {{foundImageName}} at ({{image_x}}, {{image_y}})" },
-                                new WaitAction { DisplayName = "Wait after click", DelayMin = 300, DelayMax = 600 },
+                                // Đợi UI chuyển sang màn Accept
+                                new WaitAction { DisplayName = "⏳ Đợi UI Accept hiện (1-2s)", DelayMin = 1000, DelayMax = 2000 },
+
+                                // ═══ STEP 2: Tìm nút Accept Trial ═══
+                                new IfImageAction
+                                {
+                                    DisplayName = "✅ Step 2: Tìm nút Accept Trial (9-10)",
+                                    ImagePath = "",
+                                    ImagePaths = new List<string>(), // User adds Accept button screenshots
+                                    Threshold = 0.65,
+                                    TimeoutMs = 5000,
+                                    RetryUntilFound = true,
+                                    RetryIntervalMs = 300,
+                                    MaxRetryCount = 15,
+                                    ClickOnFound = true,
+                                    ClickMode = ClickMode.Raw,
+                                    RandomOffset = 3,
+                                    ThenActions = new List<MacroAction>
+                                    {
+                                        new LogAction { DisplayName = "📝 Accepted!", Message = "✅ Ultimatum accepted! Icon: {{foundImageName}}" },
+                                        new WaitAction { DisplayName = "⏳ Đợi trial bắt đầu", DelayMin = 2000, DelayMax = 3000 },
+                                    },
+                                    ElseActions = new List<MacroAction>
+                                    {
+                                        new LogAction { DisplayName = "⚠️ Accept not found", Message = "Accept Trial button not found after 5s" },
+                                    }
+                                },
                             },
                             ElseActions = new List<MacroAction>
                             {
-                                // Not in Ultimatum — continue normal farming
+                                // Không thấy icon → đang trong trial hoặc chưa có Ultimatum
+                                // Có thể thêm skill rotation ở đây nếu muốn
                             }
                         },
-
-                        // ═══ SKILL ROTATION ═══
-                        // Right-click (main skill) — hold for channeling builds
-                        new ClickAction
-                        {
-                            DisplayName = "⚔️ Main Skill (Right Click center)",
-                            X = 960, Y = 540,
-                            Button = MouseButton.Right,
-                            Mode = ClickMode.Raw,
-                        },
-                        new WaitAction { DisplayName = "Skill delay", DelayMin = 100, DelayMax = 200 },
-
-                        // Movement skill (optional — user configures key)
-                        new KeyPressAction { DisplayName = "🏃 Move Skill (W)", KeyName = "W", VirtualKeyCode = 0x57, HoldDurationMs = 50, InputMode = KeyInputMode.RawInput },
-                        new WaitAction { DisplayName = "Move delay", DelayMin = 200, DelayMax = 400 },
                     }
                 }
             }
