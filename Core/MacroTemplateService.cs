@@ -240,64 +240,68 @@ public static class MacroTemplateService
         new MacroTemplate
         {
             Name = "⚔️ Path of Exile — Ultimatum Auto",
-            Description = "Auto farm PoE Ultimatum: tìm icon → click → chờ Accept Trial → click. Dùng Raw/Hardware mode (game cần foreground cho Vision).",
+            Description = "Auto PoE Ultimatum: Chỉ cần Snip hình icon + nút Accept → Chạy. Tự tìm icon → click → đợi → click Accept Trial.",
             Category = "Game",
             TargetWindowTitle = "Path of Exile",
             Actions = new List<MacroAction>
             {
                 new RepeatAction
                 {
-                    DisplayName = "🔄 Main Loop (infinite)",
+                    DisplayName = "🔄 Lặp vô hạn — quét Ultimatum",
                     RepeatCount = 0,
-                    IntervalMs = 800,
+                    IntervalMs = 1000,
                     LoopActions = new List<MacroAction>
                     {
-                        // ═══ STEP 1: Tìm 1 trong 8 icon Ultimatum ═══
+                        // ═══ BƯỚC 1: Tìm 1 trong các icon Ultimatum ═══
+                        // 📌 HƯỚNG DẪN: Dùng nút 📷 Snip chụp từng icon option trong game
+                        // Thêm tất cả hình icon vào đây (tối đa 20 hình)
                         new IfImageAction
                         {
-                            DisplayName = "👁️ Step 1: Tìm Icon Ultimatum (1-8)",
+                            DisplayName = "👁️ Bước 1: Tìm Icon (thêm hình vào đây)",
                             ImagePath = "",
-                            ImagePaths = new List<string>(), // User adds 8 icon screenshots
-                            Threshold = 0.70,
-                            TimeoutMs = 2000,
+                            ImagePaths = new List<string>(),
+                            Threshold = 0.65,
+                            TimeoutMs = 3000,
                             RetryUntilFound = false,
                             ClickOnFound = true,
                             ClickMode = ClickMode.Raw,
                             RandomOffset = 3,
                             ThenActions = new List<MacroAction>
                             {
-                                // Đợi UI chuyển sang màn Accept
-                                new WaitAction { DisplayName = "⏳ Đợi UI Accept hiện (1-2s)", DelayMin = 1000, DelayMax = 2000 },
+                                // Đợi game chuyển sang màn hình Accept
+                                new WaitAction { DisplayName = "⏳ Đợi màn Accept hiện ra", DelayMin = 1500, DelayMax = 2500 },
 
-                                // ═══ STEP 2: Tìm nút Accept Trial ═══
+                                // ═══ BƯỚC 2: Tìm nút Accept Trial ═══
+                                // 📌 HƯỚNG DẪN: Snip nút "Accept" hoặc "Begin" trong game
                                 new IfImageAction
                                 {
-                                    DisplayName = "✅ Step 2: Tìm nút Accept Trial (9-10)",
+                                    DisplayName = "✅ Bước 2: Tìm nút Accept (thêm hình vào đây)",
                                     ImagePath = "",
-                                    ImagePaths = new List<string>(), // User adds Accept button screenshots
-                                    Threshold = 0.65,
-                                    TimeoutMs = 5000,
+                                    ImagePaths = new List<string>(),
+                                    Threshold = 0.60,
+                                    TimeoutMs = 8000,
                                     RetryUntilFound = true,
-                                    RetryIntervalMs = 300,
-                                    MaxRetryCount = 15,
+                                    RetryIntervalMs = 400,
+                                    MaxRetryCount = 20,
                                     ClickOnFound = true,
                                     ClickMode = ClickMode.Raw,
                                     RandomOffset = 3,
                                     ThenActions = new List<MacroAction>
                                     {
-                                        new LogAction { DisplayName = "📝 Accepted!", Message = "✅ Ultimatum accepted! Icon: {{foundImageName}}" },
-                                        new WaitAction { DisplayName = "⏳ Đợi trial bắt đầu", DelayMin = 2000, DelayMax = 3000 },
+                                        new LogAction { DisplayName = "📝 Log", Message = "✅ Đã Accept Ultimatum! Icon: {{foundImageName}}" },
+                                        // Đợi trial bắt đầu rồi quay lại loop
+                                        new WaitAction { DisplayName = "⏳ Đợi trial bắt đầu", DelayMin = 3000, DelayMax = 5000 },
                                     },
                                     ElseActions = new List<MacroAction>
                                     {
-                                        new LogAction { DisplayName = "⚠️ Accept not found", Message = "Accept Trial button not found after 5s" },
+                                        new LogAction { DisplayName = "⚠️ Log", Message = "⚠️ Không tìm thấy nút Accept sau 8s" },
                                     }
                                 },
                             },
                             ElseActions = new List<MacroAction>
                             {
-                                // Không thấy icon → đang trong trial hoặc chưa có Ultimatum
-                                // Có thể thêm skill rotation ở đây nếu muốn
+                                // Không thấy icon = đang trong trial hoặc chưa gặp Ultimatum
+                                // Không làm gì, loop tiếp
                             }
                         },
                     }
