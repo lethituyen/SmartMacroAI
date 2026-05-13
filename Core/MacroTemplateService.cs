@@ -240,42 +240,72 @@ public static class MacroTemplateService
         new MacroTemplate
         {
             Name = "⚔️ Path of Exile — Ultimatum Auto",
-            Description = "Auto PoE Ultimatum: Chỉ cần Snip hình icon + nút Accept → Chạy. Tự tìm icon → click → đợi → click Accept Trial.",
+            Description = "Auto PoE Ultimatum đầy đủ: Flask + Skill + Vision 2 bước (Icon → Accept). Chỉ cần Snip hình và chạy.",
             Category = "Game",
             TargetWindowTitle = "Path of Exile",
             Actions = new List<MacroAction>
             {
+                // Init biến đếm flask
+                new SetVariableAction { DisplayName = "⚙️ Init flask_timer", VarName = "flask_timer", Value = "0", Operation = "Set" },
+
                 new RepeatAction
                 {
-                    DisplayName = "🔄 Lặp vô hạn — quét Ultimatum",
+                    DisplayName = "🔄 Vòng lặp chính (vô hạn)",
                     RepeatCount = 0,
-                    IntervalMs = 1000,
+                    IntervalMs = 300,
                     LoopActions = new List<MacroAction>
                     {
-                        // ═══ BƯỚC 1: Tìm 1 trong các icon Ultimatum ═══
-                        // 📌 HƯỚNG DẪN: Dùng nút 📷 Snip chụp từng icon option trong game
-                        // Thêm tất cả hình icon vào đây (tối đa 20 hình)
+                        // ═══════════════════════════════════════
+                        // 🧪 FLASK — mỗi ~5 giây bấm 1-5
+                        // ═══════════════════════════════════════
+                        new SetVariableAction { DisplayName = "flask_timer++", VarName = "flask_timer", Value = "1", Operation = "Increment" },
+                        new IfVariableAction
+                        {
+                            DisplayName = "🧪 Flask (mỗi 15 loop ≈ 5s)",
+                            VarName = "flask_timer",
+                            CompareOp = ">=",
+                            Value = "15",
+                            ThenActions = new List<MacroAction>
+                            {
+                                new KeyPressAction { DisplayName = "Flask 1", KeyName = "D1", VirtualKeyCode = 0x31, HoldDurationMs = 30, InputMode = KeyInputMode.RawInput },
+                                new WaitAction { DisplayName = "delay", DelayMin = 50, DelayMax = 80 },
+                                new KeyPressAction { DisplayName = "Flask 2", KeyName = "D2", VirtualKeyCode = 0x32, HoldDurationMs = 30, InputMode = KeyInputMode.RawInput },
+                                new WaitAction { DisplayName = "delay", DelayMin = 50, DelayMax = 80 },
+                                new KeyPressAction { DisplayName = "Flask 3", KeyName = "D3", VirtualKeyCode = 0x33, HoldDurationMs = 30, InputMode = KeyInputMode.RawInput },
+                                new WaitAction { DisplayName = "delay", DelayMin = 50, DelayMax = 80 },
+                                new KeyPressAction { DisplayName = "Flask 4", KeyName = "D4", VirtualKeyCode = 0x34, HoldDurationMs = 30, InputMode = KeyInputMode.RawInput },
+                                new WaitAction { DisplayName = "delay", DelayMin = 50, DelayMax = 80 },
+                                new KeyPressAction { DisplayName = "Flask 5", KeyName = "D5", VirtualKeyCode = 0x35, HoldDurationMs = 30, InputMode = KeyInputMode.RawInput },
+                                new WaitAction { DisplayName = "delay", DelayMin = 30, DelayMax = 60 },
+                                new SetVariableAction { DisplayName = "Reset flask_timer", VarName = "flask_timer", Value = "0", Operation = "Set" },
+                            },
+                            ElseActions = new List<MacroAction>()
+                        },
+
+                        // ═══════════════════════════════════════
+                        // 👁️ VISION — Tìm Icon → Click → Đợi → Accept
+                        // ═══════════════════════════════════════
                         new IfImageAction
                         {
-                            DisplayName = "👁️ Bước 1: Tìm Icon (thêm hình vào đây)",
+                            DisplayName = "👁️ Bước 1: Tìm Icon Ultimatum (Snip hình vào đây)",
                             ImagePath = "",
                             ImagePaths = new List<string>(),
                             Threshold = 0.65,
-                            TimeoutMs = 3000,
+                            TimeoutMs = 1500,
                             RetryUntilFound = false,
                             ClickOnFound = true,
                             ClickMode = ClickMode.Raw,
                             RandomOffset = 3,
                             ThenActions = new List<MacroAction>
                             {
-                                // Đợi game chuyển sang màn hình Accept
-                                new WaitAction { DisplayName = "⏳ Đợi màn Accept hiện ra", DelayMin = 1500, DelayMax = 2500 },
+                                new LogAction { DisplayName = "📝 Log", Message = "Chọn icon: {{foundImageName}} tại ({{image_x}}, {{image_y}})" },
+                                // Đợi game chuyển UI sang Accept
+                                new WaitAction { DisplayName = "⏳ Đợi UI Accept hiện", DelayMin = 1500, DelayMax = 2500 },
 
-                                // ═══ BƯỚC 2: Tìm nút Accept Trial ═══
-                                // 📌 HƯỚNG DẪN: Snip nút "Accept" hoặc "Begin" trong game
+                                // Bước 2: Tìm nút Accept Trial
                                 new IfImageAction
                                 {
-                                    DisplayName = "✅ Bước 2: Tìm nút Accept (thêm hình vào đây)",
+                                    DisplayName = "✅ Bước 2: Tìm nút Accept (Snip hình vào đây)",
                                     ImagePath = "",
                                     ImagePaths = new List<string>(),
                                     Threshold = 0.60,
@@ -288,22 +318,32 @@ public static class MacroTemplateService
                                     RandomOffset = 3,
                                     ThenActions = new List<MacroAction>
                                     {
-                                        new LogAction { DisplayName = "📝 Log", Message = "✅ Đã Accept Ultimatum! Icon: {{foundImageName}}" },
-                                        // Đợi trial bắt đầu rồi quay lại loop
+                                        new LogAction { DisplayName = "✅ Accepted!", Message = "✅ Accept Trial thành công!" },
                                         new WaitAction { DisplayName = "⏳ Đợi trial bắt đầu", DelayMin = 3000, DelayMax = 5000 },
                                     },
                                     ElseActions = new List<MacroAction>
                                     {
-                                        new LogAction { DisplayName = "⚠️ Log", Message = "⚠️ Không tìm thấy nút Accept sau 8s" },
+                                        new LogAction { DisplayName = "⚠️ Timeout", Message = "Không tìm thấy nút Accept sau 8s" },
                                     }
                                 },
                             },
-                            ElseActions = new List<MacroAction>
-                            {
-                                // Không thấy icon = đang trong trial hoặc chưa gặp Ultimatum
-                                // Không làm gì, loop tiếp
-                            }
+                            ElseActions = new List<MacroAction>()
                         },
+
+                        // ═══════════════════════════════════════
+                        // ⚔️ SKILL — đánh quái liên tục
+                        // ═══════════════════════════════════════
+                        new ClickAction
+                        {
+                            DisplayName = "⚔️ Main Skill (Right Click giữa màn hình)",
+                            X = 960, Y = 540,
+                            Button = MouseButton.Right,
+                            Mode = ClickMode.Raw,
+                        },
+                        new WaitAction { DisplayName = "Skill delay", DelayMin = 100, DelayMax = 200 },
+
+                        new KeyPressAction { DisplayName = "🏃 Move Skill (W)", KeyName = "W", VirtualKeyCode = 0x57, HoldDurationMs = 50, InputMode = KeyInputMode.RawInput },
+                        new WaitAction { DisplayName = "Move delay", DelayMin = 200, DelayMax = 400 },
                     }
                 }
             }
